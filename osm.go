@@ -2,6 +2,7 @@ package osm
 
 import (
 	"encoding/xml"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -14,6 +15,8 @@ type Map struct {
 	Nodes     []Node
 	Ways      []Way
 	Relations []Relation
+
+	nodes map[int64]Node
 }
 
 // Bounds struct
@@ -49,6 +52,10 @@ type Elem struct {
 	ChangeSet int64     `xml:"changeset,attr"`
 }
 
+func (el Elem) StringID() string {
+	return fmt.Sprint(el.ID)
+}
+
 // Node structure
 type Node struct {
 	Elem
@@ -58,15 +65,19 @@ type Node struct {
 	Tag     []Tag    `xml:"tag"`
 }
 
+type Point struct {
+	ID  int64   `xml:"ref,attr"`
+	Lat float64 `xml:"lat,attr"`
+	Lng float64 `xml:"lon,attr"`
+}
+
 // Way struct
 type Way struct {
 	Elem
 	XMLName xml.Name `xml:"way"`
 	Tags    map[string]string
-	RTags   []Tag `xml:"tag"`
-	Nds     []struct {
-		ID int64 `xml:"ref,attr"`
-	} `xml:"nd"`
+	RTags   []Tag   `xml:"tag"`
+	Nds     []Point `xml:"nd"`
 }
 
 // Member struct
@@ -104,7 +115,7 @@ func DecodeString(data string) (*Map, error) {
 // Decode an reader
 func Decode(reader io.Reader) (*Map, error) {
 	var (
-		o   = new(Map)
+		o   = &Map{nodes: make(map[int64]Node)}
 		err error
 	)
 
@@ -132,6 +143,7 @@ func Decode(reader io.Reader) (*Map, error) {
 				if err != nil {
 					return nil, err
 				}
+				o.nodes[n.ID] = n
 				o.Nodes = append(o.Nodes, n)
 
 			case "way":
@@ -140,6 +152,17 @@ func Decode(reader io.Reader) (*Map, error) {
 				if err != nil {
 					return nil, err
 				}
+				// todo test it
+				var points []Point
+				for _, point := range w.Nds {
+					if node, has := o.nodes[point.ID]; has {
+						points = append(points, Point{
+							ID:  point.ID,
+							Lng: node.Lng,
+							Lat: node.Lat})
+					}
+				}
+				w.Nds = points
 				o.Ways = append(o.Ways, w)
 
 			case "relation":
